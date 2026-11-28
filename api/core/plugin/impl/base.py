@@ -8,7 +8,7 @@ from typing import Any, cast
 from urllib.parse import unquote
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from yarl import URL
 
 from configs import dify_config
@@ -314,8 +314,8 @@ class BasePluginClient:
         Request a daemon envelope and return its validated success data.
 
         The optional transformer receives only successful envelopes, before data validation.
-        Nonzero codes expect a JSON-encoded daemon error. An invalid error message raises
-        ValueError with the original message and code.
+        Nonzero codes expect a JSON-encoded daemon error. An invalid nested error raises
+        PluginDaemonInternalServerError and retains the daemon diagnostics in its cause.
         """
         try:
             response = self._request(method, path, headers, data, params, files)
@@ -349,8 +349,10 @@ class BasePluginClient:
         if rep.code != 0:
             try:
                 error = PluginDaemonError.model_validate_json(rep.message)
-            except Exception as e:
-                raise ValueError(f"{rep.message}, code: {rep.code}") from e
+            except ValidationError as e:
+                diagnostic = PluginDaemonInnerError(rep.code, rep.message)
+                diagnostic.__cause__ = e
+                raise PluginDaemonInternalServerError(description="Internal Server Error") from diagnostic
 
             self._handle_plugin_daemon_error(error.error_type, error.message)
         if rep.data is None:
