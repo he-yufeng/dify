@@ -91,17 +91,18 @@ def test_console_tool_provider_list_returns_generic_daemon_error(
     monkeypatch: pytest.MonkeyPatch, rejected_error_decoder: tuple[int, str]
 ) -> None:
     from inspect import unwrap
-    from types import SimpleNamespace
 
     from controllers.console import bp
     from controllers.console.workspace.tool_providers import ToolCommonService, ToolProviderListApi
+    from models.account import Account
 
     console_get = unwrap(ToolProviderListApi.get)
+    account = Account(name="Test Account", email="account@example.invalid")
     seen: list[tuple[str, str, object]] = []
     errors: list[PluginDaemonInternalServerError] = []
 
     def get_with_fixture_identity(resource: ToolProviderListApi) -> object:
-        return console_get(resource, "tenant-1", SimpleNamespace(id="account-1"))
+        return console_get(resource, "tenant-1", account)
 
     def list_providers(account_id: str, tenant_id: str, provider_type: object) -> object:
         seen.append((account_id, tenant_id, provider_type))
@@ -119,7 +120,7 @@ def test_console_tool_provider_list_returns_generic_daemon_error(
 
     response = app.test_client().get("/console/api/workspaces/current/tool-providers")
 
-    assert seen == [("account-1", "tenant-1", None)]
+    assert seen == [(account.id, "tenant-1", None)]
     assert len(errors) == 1
     cause = errors[0].__cause__
     assert isinstance(cause, PluginDaemonInnerError)

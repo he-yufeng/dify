@@ -2579,15 +2579,19 @@ class TestPluginRuntimeCases:
                 assert exc_info.value.code == -500
 
         def test_non_json_error_message(self, plugin_client, mock_config):
-            """Test handling of non-JSON error message."""
-            # Arrange
-            mock_response = httpx.Response(200, json={"code": -1, "message": "Plain text error message", "data": None})
+            """Keep a plain-text daemon diagnostic in the cause, not the public error."""
+            message = "Plain text error message"
+            mock_response = httpx.Response(200, json={"code": -1, "message": message, "data": None})
 
             with patch("httpx.request", return_value=mock_response, autospec=True):
-                # Act & Assert
-                with pytest.raises(ValueError, match="Plain text error message, code: \\-1") as exc_info:
+                with pytest.raises(PluginDaemonInternalServerError) as exc_info:
                     plugin_client._request_with_plugin_daemon_response("GET", "plugin/test-tenant/test", bool)
-                assert "Plain text error message" in str(exc_info.value)
+
+            assert exc_info.value.description == "Internal Server Error"
+            assert message not in str(exc_info.value)
+            cause = exc_info.value.__cause__
+            assert isinstance(cause, PluginDaemonInnerError)
+            assert (cause.code, cause.message) == (-1, message)
 
     class TestPluginRuntimeAdvancedScenarios:
         """Advanced test scenarios for plugin runtime.
